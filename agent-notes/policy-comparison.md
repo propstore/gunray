@@ -23,6 +23,8 @@ The workstation’s user-level `uv` configuration sets `exclude-newer`, which tr
 
 The first CI run reported `I001` in `_internal.py`. The unaliased schema imports now precede the aliased import, as Ruff requires.
 
+The existing CI command omitted `--datalog-evaluator`. The conformance fixture skips without that option, even though `CLAUDE.md` requires conformance to pass for substantive changes. The existing Pytest step now names Gunray's conformance evaluator so the same run exercises both suites.
+
 ## Next step
 
 The linked PR records CI for the published branch and is open for review.
