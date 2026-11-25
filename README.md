@@ -152,6 +152,32 @@ model = GunrayEvaluator().evaluate(Program(
 `DefeasibleEvaluator`, `SemiNaiveEvaluator`, and `ClosureEvaluator` are
 exported directly if you'd rather skip the dispatcher.
 
+## Compare marking policies
+
+Use `GunrayEvaluator.compare_marking_policies` to see how the answer to a
+ground query changes across selected marking policies on the same theory.
+
+```python
+from gunray import GroundAtom, GunrayEvaluator, MarkingPolicy
+
+support = GunrayEvaluator().compare_marking_policies(
+    theory,
+    GroundAtom("q", ()),
+    policies=(MarkingPolicy.ANTONIOU_BLOCKING, MarkingPolicy.ANTONIOU_PROPAGATING),
+)
+```
+
+Each key is an observed `Answer`. Its value is the set of selected policies
+that returned it. One key means the selected policies agree. As with the
+CLI, a literal omitted from a policy's model counts as `Answer.UNKNOWN`.
+The selection must contain at least one policy. Each distinct policy runs
+once, and evaluation errors propagate to the caller.
+
+In the [Antoniou example](tests/test_antoniou_ambiguity_policy.py), `q`
+has support for `YES` under ambiguity blocking and for `UNDECIDED` under
+ambiguity propagation. Support here follows [Hellerstein 2026, Definition
+3.2, p. 6](https://arxiv.org/pdf/2606.10270v1#page=6).
+
 ## Explanations — why did the engine decide that?
 
 What was concluded is usually less interesting than why. For any

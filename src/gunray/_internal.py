@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from itertools import product
 from typing import TypeAlias, cast, overload
 
+from .answer import Answer
 from .anytime import EnumerationExceeded
 from .compiled import compile_simple_matcher, iter_compiled_bindings
 from .errors import ArityMismatchError, SafetyViolationError, UnboundVariableError
@@ -19,7 +20,7 @@ from .grounding_types import (
 from .parser import ground_atom, parse_defeasible_theory
 from .relation import IndexedRelation
 from .schema import DefeasibleTheory as SchemaDefeasibleTheory
-from .schema import FactTuple, NegationSemantics
+from .schema import DefeasibleModel, FactTuple, NegationSemantics
 from .semantics import (
     SemanticError,
     add_values,
@@ -57,6 +58,13 @@ FactModel: TypeAlias = Mapping[str, FactRows]
 LiteralText: TypeAlias = str
 RuleBodyText: TypeAlias = Sequence[LiteralText]
 RuleText: TypeAlias = str
+
+
+def _answer_from_model(model: DefeasibleModel, literal: GroundAtom) -> Answer:
+    for answer in Answer:
+        if literal.arguments in model.sections.get(answer.value, {}).get(literal.predicate, set()):
+            return answer
+    return Answer.UNKNOWN
 
 
 @dataclass(frozen=True, slots=True)
