@@ -19,8 +19,8 @@ from .grounding_types import (
 )
 from .parser import ground_atom, parse_defeasible_theory
 from .relation import IndexedRelation
-from .schema import DefeasibleTheory as SchemaDefeasibleTheory
 from .schema import DefeasibleModel, FactTuple, NegationSemantics
+from .schema import DefeasibleTheory as SchemaDefeasibleTheory
 from .semantics import (
     SemanticError,
     add_values,

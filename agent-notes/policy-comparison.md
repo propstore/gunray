@@ -6,7 +6,7 @@ Implement the bounded application of Hellerstein’s determination provenance an
 
 ## State
 
-The dispatcher method and README example are in place. The Antoniou fixture now checks the grouped answer for `q`. That conclusion depends on accepting `p`, which ambiguity propagation blocks by considering opposition from supported premises. The focused test file passed on Windows with the committed lockfile. The repository had no open PR when this work began.
+The dispatcher method and README example are in place. The Antoniou fixture now checks the grouped answer for `q`. That conclusion depends on accepting `p`, which ambiguity propagation blocks by considering opposition from supported premises. The focused test file passed on Windows with the committed lockfile. [PR #2](https://github.com/propstore/gunray/pull/2) contains the implementation.
 
 ## Decisions and why
 
@@ -21,6 +21,8 @@ The CLI already has a four-valued lookup over model sections, including its `UNK
 
 The workstation’s user-level `uv` configuration sets `exclude-newer`, which triggers a lock check against a different resolution policy. The focused run used `uv --no-config run --locked --extra dev pytest tests/test_antoniou_ambiguity_policy.py -q` to verify the committed dependency set for this checkout.
 
+The first CI run reported `I001` in `_internal.py`. The unaliased schema imports now precede the aliased import, as Ruff requires.
+
 ## Next step
 
-Publish the change and verify the PR checks.
+The linked PR records CI for the published branch and is open for review.
