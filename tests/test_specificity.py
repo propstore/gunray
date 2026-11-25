@@ -307,7 +307,7 @@ def test_generalized_specificity_does_not_prefer_defeasible_over_strict_empty_ru
     theory = DefeasibleTheory(
         facts={"p": {("a",)}, "q": {("a",)}},
         strict_rules=[Rule(id="s1", head="h(X)", body=["p(X)"])],
-        defeasible_rules=[Rule(id="d1", head="h(X)", body=["q(X)"])],
+        defeasible_rules=[Rule(id="d1", head="j(X)", body=["q(X)"])],
         defeaters=[],
         superiority=[],
         conflicts=[],
@@ -315,11 +315,7 @@ def test_generalized_specificity_does_not_prefer_defeasible_over_strict_empty_ru
     criterion = GeneralizedSpecificity(theory)
     args = list(build_arguments(theory))
     strict_arg = next(arg for arg in args if not arg.rules and arg.conclusion.predicate == "h")
-    defeasible_arg = next(
-        arg
-        for arg in args
-        if any(rule.rule_id == "d1" for rule in arg.rules) and arg.conclusion.predicate == "h"
-    )
+    defeasible_arg = next(arg for arg in args if arg.conclusion.predicate == "j")
 
     assert not criterion.prefers(defeasible_arg, strict_arg)
 

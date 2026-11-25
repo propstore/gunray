@@ -5,8 +5,8 @@ parameterized over an abstract preference relation ``>`` on
 arguments. This module exports the abstract ``PreferenceCriterion``
 protocol, a trivial "prefer nothing" instance used to exercise the
 dialectical tree in isolation, the real paper-grade
-``GeneralizedSpecificity`` criterion based on Simari & Loui 1992
-Lemma 2.4, the explicit-priority ``SuperiorityPreference`` from
+``GeneralizedSpecificity`` criterion based on García & Simari 2004
+Definition 3.5, the explicit-priority ``SuperiorityPreference`` from
 Garcia & Simari 2004 §4.1, and a ``CompositePreference`` that
 delegates to each criterion in priority order.
 """
@@ -20,7 +20,6 @@ from ._internal import _force_strict_for_closure, _ground_theory
 from .arguments import Argument
 from .disagreement import strict_closure
 from .schema import DefeasibleTheory
-from .types import GroundAtom, GroundDefeasibleRule
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,112 +81,38 @@ class TrivialPreference:
 class GeneralizedSpecificity:
     """Generalized specificity over a theory.
 
-    Simari & Loui 1992 Definition 2.6 defines strict specificity
-    ``⟨T₁, h₁⟩ ≻_spec ⟨T₂, h₂⟩`` semantically: every "activation"
-    ``e`` of the weaker argument also activates the stronger one, and
-    some activation of the stronger one fails to activate the weaker.
-    Lemma 2.4 (p.14) reduces that semantic condition to an equivalent
-    antecedent-only syntactic check:
+    García & Simari 2004 Definition 3.5, p. 108, compares nontrivial
+    activation sets over literals derivable in the program. An activation
+    of an argument may use an intermediate conclusion as a premise.
+    Strict rules participate in derivation during comparison, and the
+    program facts supply possible inputs to an activation set.
 
-        ``⟨T₁, h₁⟩ ≽ ⟨T₂, h₂⟩`` iff for every antecedent ``x ∈ An(T₂)``,
-        ``K_N ∪ An(T₁) ∪ T₂ |~ x``.
-
-    Strict specificity ``≻`` is the ``≽`` direction plus the converse
-    failure: ``right`` does not cover ``left``.
-
-    Garcia & Simari 2004 Definition 3.5 restates the same criterion as
-    "generalized specificity" for DeLP, using the set ``H_1`` of
-    literals with defeasible derivation and the "activating sets" of
-    arguments. The two formulations are equivalent up to the DeLP
-    renaming of ``K_N`` as ``Pi`` (strict rule context).
-
-    Stolzenburg, Garcia, Chesnevar, and Simari 2003 then supplies the
-    implementation-facing account Gunray relies on: page-007.png gives
-    the possible-facts definition, page-012.png defines completed
-    arguments and activation/non-trivial activation sets, and
-    page-013.png gives Figure 3's stack algorithm for computing
-    non-trivial activation sets. Gunray's implementation uses the
-    equivalent antecedent-coverage specialization already present in
-    Simari & Loui 1992 / Garcia & Simari 2004, while the
-    Stolzenburg page-image tests pin the strict-background and
-    activation-set edge cases that prevent reducing specificity to a
-    fixed pairwise rule-priority shortcut.
-
-    Gunray specializes ``K_N`` to the strict rules of ``theory``
-    (facts are deliberately excluded — if ``K_N`` included grounded
-    facts then every antecedent literal corresponding to a fact would
-    be trivially derivable and specificity would collapse). This
-    matches the B2.2 dispatch contract and yields the expected
-    results on the Opus, Nixon, and Royal-African-Elephant examples
-    (Simari 92 §5).
-
-    The criterion is instantiated once per theory; the constructor
-    grounds the strict-rule base and caches it for reuse by every
-    ``prefers`` call. ``prefers(a, a)`` is always ``False``
-    (irreflexivity is a property of strict partial orders and is
-    verified by the Hypothesis property suite).
+    Backward rule expansion follows Stolzenburg et al. 2003 Figure 3
+    (page-013.png). Every finite derivation has a set of premise leaves
+    that this search reaches. Monotonicity makes those sets sufficient
+    to find a witness against either direction of coverage.
     """
 
     def __init__(self, theory: DefeasibleTheory) -> None:
         grounded = _ground_theory(theory)
-        # K_N is the set of strict rules. Facts are intentionally
-        # excluded: seeding the strict_closure with facts would let
-        # every fact-backed antecedent cover itself trivially and
-        # destroy the antecedent-only distinction Lemma 2.4 relies on.
-        self._strict_rules: tuple[GroundDefeasibleRule, ...] = grounded.grounded_strict_rules
+        self._strict_rules = grounded.grounded_strict_rules
+        self._possible_facts = strict_closure(
+            grounded.fact_atoms,
+            self._strict_rules
+            + tuple(_force_strict_for_closure(rule) for rule in grounded.grounded_defeasible_rules),
+        )
 
     def prefers(self, left: Argument, right: Argument) -> bool:
-        """Return ``True`` iff ``left`` is strictly more specific than ``right``.
-
-        Implements Simari & Loui 1992 Lemma 2.4 / Garcia & Simari 2004
-        Definition 3.5 as documented on the class docstring. The
-        check is:
-
-        1. Does ``left`` cover ``right``? (``right``'s antecedents
-           are all derivable from ``K_N ∪ An(left) ∪ T_right``.)
-        2. Does ``right`` cover ``left``?
-        3. If only (1) holds, ``left`` is strictly more specific.
-           If both hold, the arguments are equi-specific and no
-           preference is returned. If neither (or only (2)) holds,
-           ``left`` is not preferred.
-        """
-
-        if left == right:
+        """Return whether only ``left`` covers the other side's claim."""
+        if left == right or not left.rules or not right.rules:
             return False
-        # Simari & Loui 1992 Lemma 2.4 compares non-empty defeasible
-        # rule sets T. Empty-rule arguments are strict consequences of
-        # K_N/Pi, so specificity does not make either side dominate.
-        if not left.rules or not right.rules:
-            return False
-
-        left_ant = _antecedents_of(left)
-        right_ant = _antecedents_of(right)
-
-        if not self._covers(left_ant, right, right_ant):
-            return False
-        if self._covers(right_ant, left, left_ant):
-            return False
-        return True
+        return self._covers(left, right) and not self._covers(right, left)
 
     def explain_preference(self, left: Argument, right: Argument) -> str | None:
-        """Return a brief reason iff ``left`` is strictly more specific.
-
-        Garcia & Simari 2004 §6 (explanation of defeat): a proper
-        defeater grounded in specificity is justified by noting that
-        the attacker's antecedents strictly entail the target's, but
-        not vice versa. This helper renders that reason.
-        """
-
+        """Return a brief reason iff ``left`` is strictly more specific."""
         if not self.prefers(left, right):
             return None
-        left_ant = _antecedents_of(left)
-        right_ant = _antecedents_of(right)
-        if not left_ant and right_ant:
-            # Empty-antecedent ("presumption-like") attacker case: the
-            # attacker has no conditions to discharge, so it dominates
-            # by vacuous cover while the target's antecedents block
-            # the converse. The prefers guard above already excluded
-            # empty-rule arguments.
+        if not any(rule.body for rule in left.rules) and any(rule.body for rule in right.rules):
             return "strictly more specific (no antecedents to discharge)"
         return "strictly more specific"
 
@@ -225,34 +150,29 @@ class GeneralizedSpecificity:
             citation="Garcia & Simari 2004, p. 108",
         )
 
-    def _covers(
-        self,
-        covering_antecedents: frozenset[GroundAtom],
-        covered_argument: Argument,
-        covered_antecedents: frozenset[GroundAtom],
-    ) -> bool:
-        """Return True iff ``covering`` side covers ``covered_antecedents``.
-
-        Evaluates the ``≽`` direction of Lemma 2.4:
-        ``K_N ∪ covering_antecedents ∪ T_covered |~ x`` for every
-        ``x`` in ``covered_antecedents``. Uses
-        ``disagreement.strict_closure`` with ``covered_argument``'s
-        rules shadowed by ``_force_strict_for_closure`` — the same
-        pattern ``build_arguments`` uses to treat defeasible rules as
-        closure-propagating for condition (1) of Garcia 04 Def 3.1.
-        """
-
-        if not covered_antecedents:
-            # Vacuous coverage is valid only after the empty-rule
-            # incomparability guard in ``prefers``.
-            return True
-
-        shadowed = tuple(_force_strict_for_closure(rule) for rule in covered_argument.rules)
-        closure = strict_closure(
-            covering_antecedents,
-            self._strict_rules + shadowed,
+    def _covers(self, argument: Argument, other: Argument) -> bool:
+        """Check whether every nontrivial activation of ``argument`` derives ``other``."""
+        rules = self._strict_rules + tuple(argument.rules)
+        other_rules = self._strict_rules + tuple(
+            _force_strict_for_closure(rule) for rule in other.rules
         )
-        return all(atom in closure for atom in covered_antecedents)
+        pending = [frozenset({argument.conclusion})]
+        seen = set(pending)
+        while pending:
+            premises = pending.pop()
+            if (
+                premises <= self._possible_facts
+                and argument.conclusion not in strict_closure(premises, self._strict_rules)
+                and other.conclusion not in strict_closure(premises, other_rules)
+            ):
+                return False
+            for rule in rules:
+                if rule.head in premises:
+                    expanded = premises.difference({rule.head}).union(rule.body)
+                    if expanded not in seen:
+                        seen.add(expanded)
+                        pending.append(expanded)
+        return True
 
 
 class SuperiorityPreference:
@@ -452,15 +372,3 @@ class CompositePreference:
             if criterion.prefers(right, left):
                 return None
         return None
-
-
-def _antecedents_of(argument: Argument) -> frozenset[GroundAtom]:
-    """Return ``An(T)`` — the union of defeasible rule bodies in ``T``.
-
-    Simari & Loui 1992 Implementation Details (p.10): ``An(T)`` is
-    the set of antecedents of the rules in ``T``. For a gunray
-    ``Argument`` that is the union of ``rule.body`` over every
-    ``rule`` in ``argument.rules``.
-    """
-
-    return frozenset(atom for rule in argument.rules for atom in rule.body)

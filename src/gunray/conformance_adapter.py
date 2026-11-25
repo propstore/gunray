@@ -387,13 +387,12 @@ class GunrayConformanceEvaluator:
     def __init__(self, *, core: GunrayEvaluator | None = None) -> None:
         self._core = core or GunrayEvaluator()
 
-    def evaluate_depysible(self, item: Any) -> dict[str, dict[str, set[FactTuple]]]:
-        """Evaluate DeLP and report the ground heads queried by DePYsible."""
+    def evaluate_delp_corpus(self, item: Any) -> dict[str, dict[str, set[FactTuple]]]:
+        """Evaluate DeLP and report the facts and ground heads in the generated corpus."""
         model, trace = self._core.evaluate_with_trace(_translate_theory(item))
         grounding = trace.grounding_inspection
         assert grounding is not None
-        # DePYsible's Interpreter.get_literals enumerates ground rule heads,
-        # including facts, before the adapter queries their warrants.
+        # The corpus reports warrants for its input-derived ground rule heads and facts.
         domain = _ground_atoms_to_sections(
             (*grounding.fact_atoms, *(rule.head for rule in grounding.all_rule_instances))
         )

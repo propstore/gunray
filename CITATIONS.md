@@ -10,9 +10,10 @@ definitions and page numbers; grep `src/` for `Def 3.1`, `Def 4.7`,
 ### García & Simari 2004 — *Defeasible Logic Programming*
 The DeLP pipeline Gunray implements verbatim. Uses:
 
-- Def 3.1 (argument well-formedness) — [`arguments.py`](src/gunray/arguments.py)
+- Defs 2.5 and 3.1, pp. 100–103 (derivation and argument well-formedness) — [`arguments.py`](src/gunray/arguments.py)
 - Def 3.3 (literal disagreement, facts-plus-rules) — [`disagreement.py`](src/gunray/disagreement.py)
 - Def 3.4 (counter-argument) — [`dialectic.py`](src/gunray/dialectic.py)
+- Def 3.5, p. 108 (specificity over activation sets) — [`preference.py`](src/gunray/preference.py)
 - Def 4.1 / 4.2 (proper and blocking defeaters) — [`dialectic.py`](src/gunray/dialectic.py), [`preference.py`](src/gunray/preference.py)
 - Def 4.7 (acceptable argumentation line — concordance, sub-argument exclusion, block-on-block ban) — [`dialectic.py`](src/gunray/dialectic.py)
 - Def 5.1 (dialectical tree) — [`dialectic.py`](src/gunray/dialectic.py)
@@ -27,8 +28,6 @@ Generalized specificity and the argument-structure foundations García
 2004 builds on. Uses:
 
 - Def 2.2 (argument structure, aligned with García Def 3.1) — [`arguments.py`](src/gunray/arguments.py)
-- Def 2.6 (strict specificity) and Lemma 2.4 (generalized specificity) — [`preference.py`](src/gunray/preference.py) `GeneralizedSpecificity`
-- Implementation Details p. 10 (`An(T)` activation set construction) — [`preference.py`](src/gunray/preference.py)
 
 ### Morris, Ross & Meyer 2020 — *Defeasible Disjunctive Datalog*
 KLM closure lifted to Datalog+. Uses:

@@ -102,15 +102,15 @@ def test_yaml_conformance(
     sys.stderr.flush()
 
     evaluator = runner.evaluator
-    if case.source == "generated/depysible-defeasible-corpus-v1" and isinstance(
+    if case.source == "generated/garcia-simari-defeasible-corpus-v2" and isinstance(
         evaluator, GunrayConformanceEvaluator
     ):
         assert case.theory is not None and case.expect is not None
-        # This corpus stores the complete DePYsible result for each ground head.
+        # This corpus stores its complete result for each ground head and fact.
         expected = {
             section: {predicate: set(rows) for predicate, rows in predicates.items()}
             for section, predicates in cast(DefeasibleSections, case.expect).items()
         }
-        assert evaluator.evaluate_depysible(case.theory) == expected
+        assert evaluator.evaluate_delp_corpus(case.theory) == expected
     else:
         runner.run_test_case(case)

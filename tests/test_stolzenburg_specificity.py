@@ -102,6 +102,25 @@ def test_stolzenburg_activation_set_algorithm_is_cited_on_public_criterion() -> 
     assert "page-013.png" in (GeneralizedSpecificity.__doc__ or "")
 
 
+def test_intermediate_conclusion_is_an_activation_seed() -> None:
+    """García and Simari Def. 3.5 with the chain in defeasible_gen_mixed_0003."""
+    theory = DefeasibleTheory(
+        facts={"b1": {("ann",)}},
+        defeasible_rules=[
+            Rule(id="d2", head="~d2(X)", body=["b1(X)"]),
+            Rule(id="d3", head="d1(X)", body=["b1(X)"]),
+            Rule(id="d5", head="d2(X)", body=["d1(X)"]),
+        ],
+    )
+    arguments = build_arguments(theory)
+    direct = _find_argument(arguments, "d2")
+    chained = _find_argument(arguments, "d5")
+
+    criterion = GeneralizedSpecificity(theory)
+    assert criterion.prefers(direct, chained)
+    assert not criterion.prefers(chained, direct)
+
+
 @st.composite
 def strict_chain_case(draw: st.DrawFn) -> tuple[int, int]:
     left_index = draw(st.integers(min_value=0, max_value=4))
