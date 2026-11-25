@@ -18,6 +18,10 @@ PR #2’s conformance run reported 141 failures: 91 generated mixed cases, 42 ge
 
 DePYsible’s `not_defeasibly` section carries DeLP `Answer.NO`. Maher’s `-∂` represents a different proof condition. The test uses García warrant, with DePYsible’s reporting domain supplied at the conformance boundary.
 
+The focused conformance run passed both SPINdle cases and every generated chain. It found 60 disagreements in generated strict-override and mixed cases under complete row comparison. `defeasible_gen_strict_override_0001` records warrants for both `goal` and `~goal` even though `~goal` is strict. DePYsible’s `Derivation.get_structure` takes the defeasible rules from any derivation, and `Interpreter._get_warrant` marks them without checking whether adding that support contradicts Π. García and Simari, Definition 3.1(2), p. 103 and its discussion on p. 104, rule out the contrary support. Further disagreements require their own verdicts.
+
+The first two CI attempts exposed the import layout in `tests/test_conformance.py` and the element type inferred for the empty frozenset in `arguments.py`. The formatter’s layout is applied and the empty set shares the `GroundDefeasibleRule` element annotation with the nonempty branch.
+
 ## Next step
 
 Compare the remaining failed fixtures against the paper and reference implementation. Verify Ruff, Pyright, unit tests, and the full pinned suite on the repair PR. Merge with a merge commit once the checks pass. Preserve the policy-comparison worktree’s local note while rebasing PR #2 and verify its new head after publishing with a lease.

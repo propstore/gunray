@@ -156,7 +156,9 @@ def build_arguments(
                 continue
             # García & Simari 2004 Defs. 2.5 and 3.1, pp. 100–103.
             # A strict step combines premise supports without entering the argument.
-            own_support = frozenset({rule}) if rule.kind == "defeasible" else frozenset()
+            own_support: frozenset[GroundDefeasibleRule] = (
+                frozenset({rule}) if rule.kind == "defeasible" else frozenset()
+            )
             for supports in product(*(rule_sets or {frozenset()} for rule_sets in body_rule_sets)):
                 rule_set = own_support.union(*supports)
                 if _has_redundant_nonempty_subset(
