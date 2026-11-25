@@ -14,6 +14,7 @@ from datalog_conformance.schema import TestCase as SuiteCase
 
 from gunray.conformance_adapter import GunrayConformanceEvaluator
 
+
 def _suite_root() -> Path:
     repo_root = Path(__file__).resolve().parents[1]
     suite_roots = []
@@ -101,9 +102,8 @@ def test_yaml_conformance(
     sys.stderr.flush()
 
     evaluator = runner.evaluator
-    if (
-        case.source == "generated/depysible-defeasible-corpus-v1"
-        and isinstance(evaluator, GunrayConformanceEvaluator)
+    if case.source == "generated/depysible-defeasible-corpus-v1" and isinstance(
+        evaluator, GunrayConformanceEvaluator
     ):
         assert case.theory is not None and case.expect is not None
         # This corpus stores the complete DePYsible result for each ground head.
