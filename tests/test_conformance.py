@@ -1,26 +1,18 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 import datalog_conformance
 import pytest
 import yaml
 from datalog_conformance.plugin import _load_multi_case_file
 from datalog_conformance.runner import YamlTestRunner
-from datalog_conformance.schema import SchemaError
+from datalog_conformance.schema import DefeasibleSections, SchemaError
 from datalog_conformance.schema import TestCase as SuiteCase
 
-_EXPECTED_ERROR_OVERRIDES = {
-    "defeasible/basic/spindle_racket_inline_tests::spindle_racket_fact_vs_strict_rule_conflict": (
-        "contradictory_strict_theory"
-    ),
-    "defeasible/basic/spindle_racket_test_theories::spindle_racket_fact_conflict": (
-        "contradictory_strict_theory"
-    ),
-}
-
+from gunray.conformance_adapter import GunrayConformanceEvaluator
 
 def _suite_root() -> Path:
     repo_root = Path(__file__).resolve().parents[1]
@@ -67,14 +59,6 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
             continue
         relative = yaml_path.relative_to(tests_dir).with_suffix("")
         test_id = f"{relative.as_posix()}::{case.name}"
-        expected_error = _EXPECTED_ERROR_OVERRIDES.get(test_id)
-        if expected_error is not None:
-            case = replace(
-                case,
-                expect=None,
-                expect_error=expected_error,
-                expect_per_policy=None,
-            )
         params.append((yaml_path, case))
         ids.append(test_id)
 
@@ -116,4 +100,17 @@ def test_yaml_conformance(
     sys.stderr.write(f"[gunray] running {relative.as_posix()}::{case.name}\n")
     sys.stderr.flush()
 
-    runner.run_test_case(case)
+    evaluator = runner.evaluator
+    if (
+        case.source == "generated/depysible-defeasible-corpus-v1"
+        and isinstance(evaluator, GunrayConformanceEvaluator)
+    ):
+        assert case.theory is not None and case.expect is not None
+        # This corpus stores the complete DePYsible result for each ground head.
+        expected = {
+            section: {predicate: set(rows) for predicate, rows in predicates.items()}
+            for section, predicates in cast(DefeasibleSections, case.expect).items()
+        }
+        assert evaluator.evaluate_depysible(case.theory) == expected
+    else:
+        runner.run_test_case(case)

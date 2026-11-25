@@ -11,10 +11,8 @@ literal ``h`` from a de.l.p. ``P = (Pi, Delta)`` is a pair where
 Simari & Loui 1992 Def 2.2 gives the same pair with slightly
 different wording, based on "activation" of a rule set.
 
-This module defines both the value type (``Argument``) and the naive
-enumeration ``build_arguments`` that produces all argument structures
-for a theory by brute-force subset enumeration. Efficiency is a
-Block 2+ concern.
+This module defines the value type (``Argument``) and constructs arguments
+bottom-up from the supports of grounded rule premises.
 """
 
 from __future__ import annotations
@@ -66,8 +64,8 @@ def build_arguments(
     """Enumerate all argument structures for ``theory``.
 
     Implements Garcia & Simari 2004 Def 3.1 / Simari & Loui 1992
-    Def 2.2 by naive subset enumeration. For every subset ``A`` of
-    the grounded defeasible rule base we check conditions (1)-(3):
+    Def 2.2 by building candidate supports ``A`` from grounded rule
+    premises and checking conditions (1)-(3):
 
     1. Some literal ``h`` is defeasibly derivable from ``Pi union A``.
     2. ``Pi union A`` is non-contradictory (closure has no
@@ -146,15 +144,21 @@ def build_arguments(
         atom: {frozenset()} for atom in pi_closure
     }
     minimal_for_conclusion: dict[GroundAtom, set[frozenset[GroundDefeasibleRule]]] = {}
+    supporting_rules = grounded_strict_rules + grounded_defeasible_rules
     changed = True
     while changed:
         changed = False
-        for rule in grounded_defeasible_rules:
+        for rule in supporting_rules:
+            if rule.head in pi_closure:
+                continue
             body_rule_sets = tuple(supports_for_conclusion.get(atom) for atom in rule.body)
             if any(rule_sets is None for rule_sets in body_rule_sets):
                 continue
+            # García & Simari 2004 Defs. 2.5 and 3.1, pp. 100–103.
+            # A strict step combines premise supports without entering the argument.
+            own_support = frozenset({rule}) if rule.kind == "defeasible" else frozenset()
             for supports in product(*(rule_sets or {frozenset()} for rule_sets in body_rule_sets)):
-                rule_set = frozenset({rule}).union(*supports)
+                rule_set = own_support.union(*supports)
                 if _has_redundant_nonempty_subset(
                     rule_set,
                     rule.head,
