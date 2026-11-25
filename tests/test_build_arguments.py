@@ -35,6 +35,26 @@ def _tweety_theory() -> DefeasibleTheory:
     )
 
 
+def test_strict_conclusion_combines_independent_defeasible_supports() -> None:
+    theory = DefeasibleTheory(
+        facts={"seed": {("ann",)}},
+        strict_rules=[Rule(id="s1", head="h(X)", body=["a(X)", "b(X)"])],
+        defeasible_rules=[
+            Rule(id="r1", head="a(X)", body=["seed(X)"]),
+            Rule(id="r2", head="b(X)", body=["seed(X)"]),
+        ],
+    )
+    literal = GroundAtom("h", ("ann",))
+    supports = {
+        frozenset(rule.rule_id for rule in argument.rules)
+        for argument in build_arguments(theory)
+        if argument.conclusion == literal
+    }
+
+    assert supports == {frozenset({"r1", "r2"})}
+    assert answer(theory, literal, GeneralizedSpecificity(theory)) is Answer.YES
+
+
 def test_tweety_flies_argument_exists() -> None:
     """Garcia & Simari 2004 Def 3.1: <{r1(tweety)}, flies(tweety)> is an argument."""
 

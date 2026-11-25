@@ -14,7 +14,7 @@ gunray = "gunray.cli:main"
 
 [project.optional-dependencies]
 dev = [
-    "datalog-conformance @ git+https://github.com/ctoth/datalog-conformance-suite@8df5474eb2510fbc65954159a5b206b70e7dd524",
+    "datalog-conformance @ git+https://github.com/ctoth/datalog-conformance-suite@4d51b37af435cd9bdd7cf3c06aa90b3729c82575",
     "hypothesis>=6.0",
     "pyright>=1.1.0",
     "pytest>=8.0",

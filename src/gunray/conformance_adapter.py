@@ -15,6 +15,7 @@ from .errors import ContradictoryStrictTheoryError
 from .schema import (
     ClosurePolicy,
     DefeasibleTheory,
+    FactTuple,
     MarkingPolicy,
     NegationSemantics,
     Program,
@@ -385,6 +386,24 @@ class GunrayConformanceEvaluator:
 
     def __init__(self, *, core: GunrayEvaluator | None = None) -> None:
         self._core = core or GunrayEvaluator()
+
+    def evaluate_delp_corpus(self, item: Any) -> dict[str, dict[str, set[FactTuple]]]:
+        """Evaluate DeLP and report the facts and ground heads in the generated corpus."""
+        model, trace = self._core.evaluate_with_trace(_translate_theory(item))
+        grounding = trace.grounding_inspection
+        assert grounding is not None
+        # The corpus reports warrants for its input-derived ground rule heads and facts.
+        domain = _ground_atoms_to_sections(
+            (*grounding.fact_atoms, *(rule.head for rule in grounding.all_rule_instances))
+        )
+        suite_model = _suite_defeasible_model(model, trace.strict)
+        projected: dict[str, dict[str, set[FactTuple]]] = {}
+        for section, predicates in suite_model.sections.items():
+            for predicate, rows in predicates.items():
+                visible = rows & domain.get(predicate, set())
+                if visible:
+                    projected.setdefault(section, {})[predicate] = visible
+        return projected
 
     def evaluate(
         self,
