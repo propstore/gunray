@@ -17,6 +17,7 @@ from typing import TextIO, cast
 
 import yaml
 
+from ._internal import _answer_from_model
 from .adapter import GunrayEvaluator
 from .answer import Answer
 from .dialectic import explain, render_tree, render_tree_mermaid
@@ -240,20 +241,6 @@ def _tree_to_data(node: object) -> dict[str, object]:
         "mark": mark(current),
         "children": [_tree_to_data(child) for child in children],
     }
-
-
-def _answer_from_model(model: DefeasibleModel, literal: GroundAtom) -> Answer:
-    row = literal.arguments
-    predicate = literal.predicate
-    for answer, section in (
-        (Answer.YES, "yes"),
-        (Answer.NO, "no"),
-        (Answer.UNDECIDED, "undecided"),
-        (Answer.UNKNOWN, "unknown"),
-    ):
-        if row in model.sections.get(section, {}).get(predicate, set()):
-            return answer
-    return Answer.UNKNOWN
 
 
 def _parse_ground_literal(text: str) -> GroundAtom:

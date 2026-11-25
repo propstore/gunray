@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from dataclasses import replace
 from typing import cast, overload
 
+from ._internal import _answer_from_model
+from .answer import Answer
 from .closure import ClosureEvaluator
 from .defeasible import DefeasibleEvaluator
 from .evaluator import SemiNaiveEvaluator
@@ -19,6 +23,7 @@ from .schema import (
     ProjectionSemantics,
 )
 from .trace import DatalogTrace, DefeasibleTrace, TraceConfig
+from .types import GroundAtom
 
 
 class GunrayEvaluator:
@@ -151,6 +156,32 @@ class GunrayEvaluator:
             tuple[Model | DefeasibleModel, DatalogTrace | DefeasibleTrace],
             self._suite_bridge().evaluate_with_trace(item, None, trace_config),  # type: ignore[attr-defined]
         )
+
+    def compare_marking_policies(
+        self,
+        theory: DefeasibleTheory,
+        literal: GroundAtom,
+        *,
+        policies: Iterable[MarkingPolicy],
+    ) -> dict[Answer, frozenset[MarkingPolicy]]:
+        """Group distinct selected policies by their answer to a ground literal.
+
+        The policies for an answer form its support over this selection
+        (Hellerstein 2026, Definition 3.2, p. 6). Omitted literals project to
+        ``Answer.UNKNOWN``, as in the CLI. Evaluation errors propagate.
+        """
+        selected = dict.fromkeys(policies)
+        if not selected:
+            raise ValueError("At least one marking policy is required")
+
+        # Fact rows can be one-shot iterables. Evaluate every policy on the same rows.
+        snapshot = replace(theory, facts={name: tuple(rows) for name, rows in theory.facts.items()})
+        support: dict[Answer, set[MarkingPolicy]] = {}
+        for policy in selected:
+            model = self.evaluate(snapshot, marking_policy=policy)
+            answer = _answer_from_model(model, literal)
+            support.setdefault(answer, set()).add(policy)
+        return {answer: frozenset(group) for answer, group in support.items()}
 
     def satisfies_klm_property(
         self,

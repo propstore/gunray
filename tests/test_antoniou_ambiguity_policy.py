@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from gunray import DefeasibleEvaluator, DefeasibleTheory, MarkingPolicy, Rule
+from gunray import (
+    Answer,
+    DefeasibleEvaluator,
+    DefeasibleTheory,
+    GroundAtom,
+    GunrayEvaluator,
+    MarkingPolicy,
+    Rule,
+)
 
 ANTONIOU_PAGE_010 = "papers/Antoniou_2007_DefeasibleReasoningSemanticWeb/pngs/page-010.png"
 Sections = dict[str, dict[str, set[tuple[str, ...]]]]
@@ -100,6 +109,39 @@ def test_reduced_page_010_downstream_conclusion_becomes_undecided() -> None:
     assert _has(blocking, "yes", "q")
     assert _has(propagating, "undecided", "p")
     assert _has(propagating, "undecided", "q")
+
+    assert GunrayEvaluator().compare_marking_policies(
+        theory,
+        GroundAtom("q", ()),
+        policies=(MarkingPolicy.ANTONIOU_BLOCKING, MarkingPolicy.ANTONIOU_PROPAGATING),
+    ) == {
+        Answer.YES: frozenset({MarkingPolicy.ANTONIOU_BLOCKING}),
+        Answer.UNDECIDED: frozenset({MarkingPolicy.ANTONIOU_PROPAGATING}),
+    }
+
+
+def test_policy_comparison_uses_the_same_fact_rows_for_every_policy() -> None:
+    theory = DefeasibleTheory(facts={"observed": iter([("a",), ("b",)])})
+    policies = (*MarkingPolicy, MarkingPolicy.BLOCKING)
+
+    assert GunrayEvaluator().compare_marking_policies(
+        theory, GroundAtom("observed", ("b",)), policies=iter(policies)
+    ) == {Answer.YES: frozenset(MarkingPolicy)}
+
+
+def test_policy_comparison_reports_omitted_literals_as_unknown() -> None:
+    theory = DefeasibleTheory(facts={"observed": [("a",)]})
+
+    assert GunrayEvaluator().compare_marking_policies(
+        theory, GroundAtom("observed", ("b",)), policies=MarkingPolicy
+    ) == {Answer.UNKNOWN: frozenset(MarkingPolicy)}
+
+
+def test_policy_comparison_requires_a_policy() -> None:
+    with pytest.raises(ValueError, match="At least one marking policy"):
+        GunrayEvaluator().compare_marking_policies(
+            DefeasibleTheory(), GroundAtom("q", ()), policies=()
+        )
 
 
 @given(
