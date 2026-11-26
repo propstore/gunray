@@ -1,0 +1,10 @@
+# Each state is one ordering of the same inheritance graph.
+# Barn spec/objects.md, section 3.3: visit each parent's subtree in order.
+rules:
+  - 'path(S,P,X) :- root(S,X), empty_path(P).'
+  - 'path(S,Q,Y) :- path(S,P,X), parent(S,X,I,Y), extend(P,I,Q).'
+  - 'visit(M,S,X,R) :- path(S,P,X), rank(M,P,R).'
+  - 'later_visit(M,S,X,R) :- visit(M,S,X,R), visit(M,S,X,Q), Q < R.'
+  - 'first_visit(M,S,X,R) :- visit(M,S,X,R), not later_visit(M,S,X,R).'
+  - 'winner(M,S,A,B,A) :- competing(A,B), first_visit(M,S,A,R), first_visit(M,S,B,Q), R < Q.'
+  - 'winner(M,S,A,B,B) :- competing(A,B), first_visit(M,S,A,R), first_visit(M,S,B,Q), Q < R.'
