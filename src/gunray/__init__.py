@@ -45,6 +45,7 @@ from .preference import (
     SuperiorityPreference,
     TrivialPreference,
 )
+from .program_file import evaluate_program_file
 from .schema import (
     ClosurePolicy,
     DefeasibleModel,
@@ -121,6 +122,7 @@ __all__ = [
     "compute_non_approximated",
     "counter_argues",
     "disagrees",
+    "evaluate_program_file",
     "explain",
     "inspect_grounding",
     "is_subargument",

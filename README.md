@@ -83,10 +83,31 @@ uv sync --extra dev
 
 ## CLI and REPL
 
-The `gunray` command consumes the existing `DefeasibleTheory` schema in YAML
-or JSON. It does not introduce a second rule language. JSON output is stable
-and contains no explanatory prose, which makes it suitable for scripts and
-agents.
+`gunray run` evaluates a plain Datalog program written in YAML or JSON. Save
+this program as `ancestry.gnr`:
+
+```yaml
+facts:
+  parent: [[leaf, branch], [branch, root]]
+rules:
+  - 'above(X,Y) :- parent(X,Y).'
+  - 'above(X,Z) :- parent(X,Y), above(Y,Z).'
+  - 'answer(X) :- above("leaf",X).'
+```
+
+`gunray run ancestry.gnr --query answer` prints `{"answer":[["branch"],["root"]]}`.
+Omit `--query` to return the model. To add facts for a particular run,
+pass `--facts more.yaml` with a mapping such as `parent: [[root, sky]]`.
+From Python, `evaluate_program_file("ancestry.gnr", facts={"parent": [("root", "sky")]},
+query="answer").facts` returns the relation as a set of tuples. Import the
+function from `gunray`. Additional rows apply only to that evaluation.
+
+In YAML fact rows, `leaf` is a string. In rule terms, `leaf` and `X` are
+both variables. Write `"leaf"` for the literal string. Rule parsing and
+safety errors identify the file and the starting line of the rule.
+
+The `answer`, `model`, `explain` and `tree` commands accept the existing
+`DefeasibleTheory` schema in YAML or JSON.
 
 For example, save this as `theory.yaml`:
 

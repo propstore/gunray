@@ -1,8 +1,4 @@
-"""Command-line and interactive interfaces for Gunray theories.
-
-The input document is the public ``DefeasibleTheory`` schema encoded as
-YAML or JSON. No rule-language syntax is introduced here.
-"""
+"""Command-line and interactive interfaces for Gunray programs and theories."""
 
 from __future__ import annotations
 
@@ -24,13 +20,18 @@ from .dialectic import explain, render_tree, render_tree_mermaid
 from .errors import GunrayError, ParseError
 from .parser import parse_atom_text
 from .preference import PreferenceCriterion
+from .program_file import DocumentError as CliError
+from .program_file import (
+    _facts_from_data,
+    _mapping,
+    _row_from_data,
+    _sequence,
+    _string,
+    evaluate_program_file,
+)
 from .schema import DefeasibleModel, DefeasibleTheory, Rule, Scalar
 from .trace import DefeasibleTrace
 from .types import Constant, GroundAtom
-
-
-class CliError(ValueError):
-    """Raised for invalid CLI input before it reaches the evaluator."""
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -43,6 +44,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "repl":
             GunrayCmd().cmdloop()
+            return 0
+        if args.command == "run":
+            additions = None
+            if args.facts:
+                with Path(args.facts).open(encoding="utf-8") as stream:
+                    additions = _facts_from_data(yaml.safe_load(stream))
+            rows = evaluate_program_file(args.program, facts=additions, query=args.query).facts
+            print(_json({name: sorted(relation, key=_row_key) for name, relation in rows.items()}))
             return 0
         theory = load_theory(args.theory, input_format=args.input_format)
         literal = _parse_ground_literal(args.literal) if hasattr(args, "literal") else None
@@ -113,6 +122,10 @@ def theory_to_data(theory: DefeasibleTheory) -> dict[str, object]:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="gunray")
     subcommands = parser.add_subparsers(dest="command")
+    run = subcommands.add_parser("run", help="Evaluate a plain Datalog program as JSON rows")
+    run.add_argument("program", help="Program file in YAML or JSON")
+    run.add_argument("--facts", help="File of additional predicate-to-row mappings")
+    run.add_argument("--query", help="Return only the named relation")
     for name in ("answer", "explain", "tree"):
         command = subcommands.add_parser(name)
         _add_theory_argument(command)
@@ -253,17 +266,6 @@ def _parse_ground_literal(text: str) -> GroundAtom:
     return GroundAtom(predicate=atom.predicate, arguments=tuple(arguments))
 
 
-def _facts_from_data(raw: object) -> dict[str, list[tuple[Scalar, ...]]]:
-    facts = _mapping(raw, "facts")
-    result: dict[str, list[tuple[Scalar, ...]]] = {}
-    for predicate, raw_rows in facts.items():
-        if not isinstance(predicate, str):
-            raise CliError("Fact predicates must be strings")
-        rows = _sequence(raw_rows, f"facts.{predicate}")
-        result[predicate] = [_row_from_data(row, f"facts.{predicate}") for row in rows]
-    return result
-
-
 def _rules_from_data(raw: object, section: str) -> tuple[Rule, ...]:
     entries = _sequence(raw, section)
     rules: list[Rule] = []
@@ -294,37 +296,6 @@ def _pairs_from_data(raw: object, section: str) -> tuple[tuple[str, str], ...]:
             )
         )
     return tuple(pairs)
-
-
-def _mapping(value: object, name: str) -> Mapping[str, object]:
-    if not isinstance(value, dict):
-        raise CliError(f"{name} must be a mapping with string keys")
-    mapping = cast(dict[object, object], value)
-    if not all(isinstance(key, str) for key in mapping):
-        raise CliError(f"{name} must be a mapping with string keys")
-    return cast(dict[str, object], mapping)
-
-
-def _sequence(value: object, name: str) -> Sequence[object]:
-    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
-        raise CliError(f"{name} must be a list")
-    return cast(Sequence[object], value)
-
-
-def _row_from_data(value: object, name: str) -> tuple[Scalar, ...]:
-    row = _sequence(value, name)
-    values: list[Scalar] = []
-    for item in row:
-        if not isinstance(item, (str, int, float, bool)):
-            raise CliError(f"{name} rows may contain only string, number, or boolean values")
-        values.append(item)
-    return tuple(values)
-
-
-def _string(value: object, name: str) -> str:
-    if not isinstance(value, str):
-        raise CliError(f"{name} must be a string")
-    return value
 
 
 def _rule_to_data(rule: Rule) -> dict[str, object]:

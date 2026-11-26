@@ -60,7 +60,13 @@ def parse_program(program: SchemaProgram) -> tuple[dict[str, set[tuple[Scalar, .
     """Parse a Gunray program into normalized facts and rules."""
 
     facts = normalize_facts(program.facts)
-    rules = [parse_rule_text(rule_text) for rule_text in program.rules]
+    rules: list[Rule] = []
+    for rule_text in program.rules:
+        try:
+            rules.append(parse_rule_text(rule_text))
+        except ParseError as exc:
+            exc.rule_text = rule_text
+            raise
     return facts, rules
 
 
