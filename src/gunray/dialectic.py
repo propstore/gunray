@@ -43,10 +43,11 @@ from ._internal import _atom_sort_key, _force_strict_for_closure, _ground_theory
 from .answer import Answer
 from .arguments import (
     Argument,
+    _prepare_arguments,
     build_arguments,
     is_subargument,
 )
-from .disagreement import complement, disagrees, has_contradiction, strict_closure
+from .disagreement import StrictContext, complement, has_contradiction, strict_closure
 from .parser import parse_defeasible_theory
 from .preference import PreferenceCriterion
 from .schema import DefeasibleTheory
@@ -80,6 +81,9 @@ class DialecticalContext:
     facts: frozenset[GroundAtom]
     conflicts: frozenset[tuple[str, str]]
 
+    def strict_context(self) -> StrictContext:
+        return StrictContext(self.strict_rules, self.facts, self.conflicts)
+
 
 def _dialectical_context(theory: DefeasibleTheory) -> DialecticalContext:
     grounded = _ground_theory(theory)
@@ -110,15 +114,8 @@ def counter_argues(
     sub-arguments; descending is the whole point of this refactor.
     """
     universe = universe if universe is not None else build_arguments(theory)
-    context = _dialectical_context(theory)
-    for _sub in _disagreeing_subarguments(
-        attacker,
-        target,
-        universe,
-        context.strict_rules,
-        context.facts,
-        context.conflicts,
-    ):
+    context = _dialectical_context(theory).strict_context()
+    for _sub in _disagreeing_subarguments(attacker, target, universe, context):
         return True
     return False
 
@@ -127,9 +124,7 @@ def _disagreeing_subarguments(
     attacker: Argument,
     target: Argument,
     universe: tuple[Argument, ...] | frozenset[Argument],
-    strict_rules: tuple[GroundDefeasibleRule, ...],
-    facts: frozenset[GroundAtom],
-    conflicts: frozenset[tuple[str, str]] = frozenset(),
+    context: StrictContext,
 ) -> list[Argument]:
     """Return every sub-argument ``⟨A, h⟩`` of ``target`` whose
     conclusion disagrees with ``attacker.conclusion``.
@@ -144,13 +139,7 @@ def _disagreeing_subarguments(
     for sub in universe:
         if not is_subargument(sub, target):
             continue
-        if disagrees(
-            attacker.conclusion,
-            sub.conclusion,
-            strict_rules,
-            facts=facts,
-            conflicts=conflicts,
-        ):
+        if context.disagrees(attacker.conclusion, sub.conclusion):
             hits.append(sub)
             continue
         if any(attacker.conclusion in rule.default_negated_body for rule in sub.rules):
@@ -176,15 +165,8 @@ def proper_defeater(
     nothing is proper.
     """
     universe = universe if universe is not None else build_arguments(theory)
-    context = _dialectical_context(theory)
-    for sub in _disagreeing_subarguments(
-        attacker,
-        target,
-        universe,
-        context.strict_rules,
-        context.facts,
-        context.conflicts,
-    ):
+    context = _dialectical_context(theory).strict_context()
+    for sub in _disagreeing_subarguments(attacker, target, universe, context):
         if criterion.prefers(attacker, sub):
             return True
     return False
@@ -206,15 +188,8 @@ def blocking_defeater(
     ``⟨A, h⟩ > a1``).
     """
     universe = universe if universe is not None else build_arguments(theory)
-    context = _dialectical_context(theory)
-    for sub in _disagreeing_subarguments(
-        attacker,
-        target,
-        universe,
-        context.strict_rules,
-        context.facts,
-        context.conflicts,
-    ):
+    context = _dialectical_context(theory).strict_context()
+    for sub in _disagreeing_subarguments(attacker, target, universe, context):
         if not criterion.prefers(attacker, sub) and not criterion.prefers(sub, attacker):
             return True
     return False
@@ -253,26 +228,24 @@ def _concordant(
     closure pass, matching the Def 3.1 condition (2) treatment in
     ``build_arguments``.
     """
-    context = _dialectical_context(theory)
+    context = _dialectical_context(theory).strict_context()
     rules = frozenset(rule for rule_set in rule_sets for rule in rule_set)
-    return _concordant_rules(rules, context.strict_rules, context.facts, context.conflicts, {})
+    return _concordant_rules(rules, context, {})
 
 
 def _concordant_rules(
     rules: frozenset[GroundDefeasibleRule],
-    strict_rules: tuple[GroundDefeasibleRule, ...],
-    facts: frozenset[GroundAtom],
-    conflicts: frozenset[tuple[str, str]],
+    context: StrictContext,
     cache: dict[frozenset[GroundDefeasibleRule], bool],
 ) -> bool:
     cached = cache.get(rules)
     if cached is not None:
         return cached
-    combined: list[GroundDefeasibleRule] = list(strict_rules)
+    combined: list[GroundDefeasibleRule] = list(context.strict_rules)
     for rule in rules:
         combined.append(_force_strict_for_closure(rule))
-    closure = strict_closure(frozenset(), tuple(combined), facts=facts)
-    if has_contradiction(closure, conflicts=conflicts):
+    closure = strict_closure(context.pi_closure, tuple(combined))
+    if has_contradiction(closure, conflicts=context.conflicts):
         cache[rules] = False
         return False
     cache[rules] = True
@@ -284,9 +257,7 @@ def _defeat_kind(
     target: Argument,
     criterion: PreferenceCriterion,
     universe: tuple[Argument, ...] | frozenset[Argument],
-    strict_rules: tuple[GroundDefeasibleRule, ...],
-    facts: frozenset[GroundAtom],
-    conflicts: frozenset[tuple[str, str]],
+    context: StrictContext,
 ) -> DefeaterKind | None:
     """Return ``"proper"``, ``"blocking"``, or ``None``.
 
@@ -296,7 +267,7 @@ def _defeat_kind(
     some disagreeing sub-argument is preference-neutral vs.
     ``attacker``; otherwise ``None``.
     """
-    subs = _disagreeing_subarguments(attacker, target, universe, strict_rules, facts, conflicts)
+    subs = _disagreeing_subarguments(attacker, target, universe, context)
     proper_hit = False
     blocking_hit = False
     for sub in subs:
@@ -329,16 +300,8 @@ def classify_defeat(
     """
 
     actual_universe = universe if universe is not None else build_arguments(theory)
-    context = _dialectical_context(theory)
-    kind = _defeat_kind(
-        attacker,
-        target,
-        criterion,
-        actual_universe,
-        context.strict_rules,
-        context.facts,
-        context.conflicts,
-    )
+    context = _dialectical_context(theory).strict_context()
+    kind = _defeat_kind(attacker, target, criterion, actual_universe, context)
     if kind == "proper" or kind == "blocking":
         return kind
     return None
@@ -374,21 +337,33 @@ def build_tree(
     guaranteed: ``build_arguments`` returns a finite frozenset and
     cond 3 forbids re-entry along a line.
     """
-    argument_universe = universe if universe is not None else build_arguments(theory)
-    actual_context = context if context is not None else _dialectical_context(theory)
+    if universe is None and context is None:
+        universe, strict_context = _prepare_arguments(theory)
+    else:
+        universe = universe if universe is not None else build_arguments(theory)
+        actual_context = context if context is not None else _dialectical_context(theory)
+        strict_context = actual_context.strict_context()
     actual_concordance_cache = concordance_cache if concordance_cache is not None else {}
+    return _build_tree(root, criterion, universe, strict_context, actual_concordance_cache)
+
+
+def _build_tree(
+    root: Argument,
+    criterion: PreferenceCriterion,
+    universe: tuple[Argument, ...] | frozenset[Argument],
+    context: StrictContext,
+    concordance_cache: dict[frozenset[GroundDefeasibleRule], bool],
+) -> DialecticalNode:
     return _expand(
         root,
         [root],
         [None],
-        argument_universe,
+        universe,
         criterion,
-        actual_context.strict_rules,
-        actual_context.facts,
-        actual_context.conflicts,
+        context,
         root.rules,
         frozenset(),
-        actual_concordance_cache,
+        concordance_cache,
     )
 
 
@@ -398,9 +373,7 @@ def _expand(
     edge_kinds: list[DefeaterKind | None],
     universe: tuple[Argument, ...] | frozenset[Argument],
     criterion: PreferenceCriterion,
-    strict_rules: tuple[GroundDefeasibleRule, ...],
-    facts: frozenset[GroundAtom],
-    conflicts: frozenset[tuple[str, str]],
+    context: StrictContext,
     supporting_rules: frozenset[GroundDefeasibleRule],
     interfering_rules: frozenset[GroundDefeasibleRule],
     concordance_cache: dict[frozenset[GroundDefeasibleRule], bool],
@@ -418,7 +391,7 @@ def _expand(
     node_defeater_kind: NodeDefeaterKind = parent_edge_kind if parent_edge_kind else "root"
 
     for candidate in universe:
-        kind = _defeat_kind(candidate, current, criterion, universe, strict_rules, facts, conflicts)
+        kind = _defeat_kind(candidate, current, criterion, universe, context)
         if kind is None:
             continue
         attacks_default_assumption = _attacks_default_assumption(candidate, current, universe)
@@ -448,9 +421,7 @@ def _expand(
             next_interfering_rules = interfering_rules
             if not _concordant_rules(
                 next_supporting_rules,
-                strict_rules,
-                facts,
-                conflicts,
+                context,
                 concordance_cache,
             ):
                 continue
@@ -459,9 +430,7 @@ def _expand(
             next_interfering_rules = interfering_rules | candidate.rules
             if not _concordant_rules(
                 next_interfering_rules,
-                strict_rules,
-                facts,
-                conflicts,
+                context,
                 concordance_cache,
             ):
                 continue
@@ -476,9 +445,7 @@ def _expand(
                 new_edges,
                 universe,
                 criterion,
-                strict_rules,
-                facts,
-                conflicts,
+                context,
                 next_supporting_rules,
                 next_interfering_rules,
                 concordance_cache,
@@ -838,7 +805,7 @@ def _is_warranted(
     literal: GroundAtom,
     arguments: frozenset[Argument],
     criterion: PreferenceCriterion,
-    theory: DefeasibleTheory,
+    context: StrictContext,
 ) -> bool:
     """Return True iff some ``⟨A, literal⟩`` has a tree that marks ``U``.
 
@@ -860,7 +827,7 @@ def _is_warranted(
             continue
         if any(rule.kind == "defeater" for rule in arg.rules):
             continue
-        tree = build_tree(arg, criterion, theory, universe=arguments)
+        tree = _build_tree(arg, criterion, arguments, context, {})
         if mark(tree) == "U":
             return True
     return False
@@ -889,13 +856,13 @@ def answer(
     the answer. Real specificity arrives in Block 2 via
     ``GeneralizedSpecificity``.
     """
-    arguments = build_arguments(theory)
+    arguments, context = _prepare_arguments(theory)
 
-    if _is_warranted(literal, arguments, criterion, theory):
+    if _is_warranted(literal, arguments, criterion, context):
         return Answer.YES
 
     opposite = complement(literal)
-    if _is_warranted(opposite, arguments, criterion, theory):
+    if _is_warranted(opposite, arguments, criterion, context):
         return Answer.NO
 
     has_argument_for_either = any(

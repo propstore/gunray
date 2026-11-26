@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Literal
 
 from ._internal import _atom_sort_key, _strict_rule_to_program_text
 from .anytime import EnumerationExceeded
-from .arguments import build_arguments
+from .arguments import _prepare_arguments, build_arguments
 from .closure import ClosureEvaluator
 from .disagreement import complement
 from .errors import ContradictoryStrictTheoryError
@@ -215,7 +215,7 @@ def _evaluate_via_argument_pipeline(
     and ``dialectic``: the dialectical module imports
     ``_atom_sort_key`` from this file at import time.
     """
-    from .dialectic import _dialectical_context, _theory_predicates, build_tree, mark
+    from .dialectic import _build_tree, _theory_predicates, mark
     from .disagreement import complement
     from .preference import (
         CompositePreference,
@@ -226,12 +226,8 @@ def _evaluate_via_argument_pipeline(
     if grounding_inspection is None:
         grounding_inspection = inspect_grounding(theory)
     try:
-        arguments = tuple(
-            sorted(
-                build_arguments(theory, max_arguments=max_arguments),
-                key=_argument_sort_key,
-            )
-        )
+        argument_set, strict_context = _prepare_arguments(theory, max_arguments=max_arguments)
+        arguments = tuple(sorted(argument_set, key=_argument_sort_key))
     except EnumerationExceeded as exc:
         trace = DefeasibleTrace(config=trace_config)
         trace.grounding_inspection = grounding_inspection
@@ -251,7 +247,6 @@ def _evaluate_via_argument_pipeline(
         GeneralizedSpecificity(specificity_theory or theory),
     )
     predicates = _theory_predicates(theory)
-    dialectical_context = _dialectical_context(theory)
     concordance_cache: dict[frozenset["GroundDefeasibleRule"], bool] = {}
 
     # Defeater-kind arguments exist in the argument universe (so they
@@ -272,14 +267,7 @@ def _evaluate_via_argument_pipeline(
             continue
         if arg.conclusion in warranted:
             continue
-        tree = build_tree(
-            arg,
-            criterion,
-            theory,
-            universe=arguments,
-            context=dialectical_context,
-            concordance_cache=concordance_cache,
-        )
+        tree = _build_tree(arg, criterion, arguments, strict_context, concordance_cache)
         label = mark(tree)
         if arg.conclusion not in trees or label == "U":
             trees[arg.conclusion] = tree
