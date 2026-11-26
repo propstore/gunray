@@ -264,7 +264,7 @@ def apply_rule_with_overrides(
                 captured_rows,
             )
             return derived_count
-    premises = {} if derivations is not None else None
+    premises: dict[int, GroundAtom] | None = {} if derivations is not None else None
     bindings = _iter_positive_body_matches_from_ordered_atoms(
         ordered_atoms,
         model,

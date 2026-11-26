@@ -18,6 +18,8 @@ Record one witness at first insertion. Its premises were visible to the rule and
 
 The existing compiled rule path returns head rows alone, and the binding path loses wildcard columns. Opt-in collection uses the existing generic join path to record the exact matched rows. NEMO leaves unbound variables in negative patterns, including repeated variables that constrain which tuple would refute the condition.
 
+The first CI run rejected the optional empty premises dictionary as partially unknown. Its declared type now matches both matcher parameters.
+
 ## Next step
 
-Open the Gunray PR, verify its CI, and leave it open.
+Verify CI on Gunray PR #7 and leave it open.
