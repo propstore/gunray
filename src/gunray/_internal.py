@@ -10,7 +10,7 @@ from typing import TypeAlias, cast, overload
 from .answer import Answer
 from .anytime import EnumerationExceeded
 from .compiled import compile_simple_matcher, iter_compiled_bindings
-from .errors import ArityMismatchError, SafetyViolationError, UnboundVariableError
+from .errors import ArityMismatchError, GunrayError, SafetyViolationError, UnboundVariableError
 from .grounding_types import (
     GroundingInspection,
     GroundingSubstitution,
@@ -438,30 +438,37 @@ def _validate_program(
                 raise ArityMismatchError(f"Inconsistent fact arity for predicate {predicate}")
 
     for rule in rules:
-        positive_vars: set[str] = set()
-        bound_vars: set[str] = set()
-        for atom in rule.positive_body:
-            _check_arity(arities, atom.predicate, atom.arity)
-            _validate_positive_atom(atom, bound_vars)
-            atom_vars = _binding_variables_in_atom(atom)
-            bound_vars |= atom_vars
-            positive_vars |= atom_vars
-        for atom in rule.negative_body:
-            _check_arity(arities, atom.predicate, atom.arity)
-            if (
-                negation_semantics is NegationSemantics.SAFE
-                and _variables_in_atom(atom) - positive_vars
-            ):
-                raise SafetyViolationError(
-                    "Variables in negated literals must be positively bound "
-                    "under NegationSemantics.SAFE"
-                )
-        for constraint in rule.constraints:
-            if _variables_in_comparison(constraint) - positive_vars:
-                raise UnboundVariableError("Constraint variables must be bound earlier")
-        for head in rule.heads:
-            _check_arity(arities, head.predicate, head.arity)
-            _validate_head(head, positive_vars)
+        try:
+            _validate_rule(rule, arities, negation_semantics)
+        except GunrayError as exc:
+            exc.rule_text = rule.source_text
+            raise
+
+
+def _validate_rule(rule: Rule, arities: ArityMap, negation_semantics: NegationSemantics) -> None:
+    positive_vars: set[str] = set()
+    bound_vars: set[str] = set()
+    for atom in rule.positive_body:
+        _check_arity(arities, atom.predicate, atom.arity)
+        _validate_positive_atom(atom, bound_vars)
+        atom_vars = _binding_variables_in_atom(atom)
+        bound_vars |= atom_vars
+        positive_vars |= atom_vars
+    for atom in rule.negative_body:
+        _check_arity(arities, atom.predicate, atom.arity)
+        unbound = _variables_in_atom(atom) - positive_vars
+        if negation_semantics is NegationSemantics.SAFE and unbound:
+            raise SafetyViolationError(
+                "Variables in negated literals must be positively bound "
+                f"under NegationSemantics.SAFE: {', '.join(sorted(unbound))}. "
+                "Quote string constants."
+            )
+    for constraint in rule.constraints:
+        if _variables_in_comparison(constraint) - positive_vars:
+            raise UnboundVariableError("Constraint variables must be bound earlier")
+    for head in rule.heads:
+        _check_arity(arities, head.predicate, head.arity)
+        _validate_head(head, positive_vars)
 
 
 def _match_positive_body(

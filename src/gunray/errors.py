@@ -7,6 +7,7 @@ class GunrayError(Exception):
     """Base class for evaluator errors."""
 
     code = "gunray_error"
+    rule_text: str | None = None
 
 
 class ParseError(GunrayError):
