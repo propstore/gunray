@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-from .types import GroundAtom, Scalar
+from .types import Atom, Comparison, GroundAtom, Scalar
 
 if TYPE_CHECKING:
     from .arguments import Argument
@@ -37,6 +37,17 @@ def _marking_dict_factory() -> dict[GroundAtom, Literal["U", "D"]]:
 class TraceConfig:
     capture_derived_rows: bool = False
     max_derived_rows_per_rule_fire: int = 10
+    capture_derivations: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class DatalogDerivation:
+    """One successful rule application. A supplied fact has no rule text."""
+
+    rule_text: str | None
+    premises: tuple[GroundAtom, ...] = ()
+    negated: tuple[Atom, ...] = ()
+    constraints: tuple[Comparison, ...] = ()
 
 
 @dataclass(slots=True)
@@ -101,6 +112,13 @@ class StratumTrace:
 class DatalogTrace:
     config: TraceConfig = field(default_factory=TraceConfig)
     strata: list[StratumTrace] = field(default_factory=_stratum_trace_list_factory)
+    derivations: dict[GroundAtom, DatalogDerivation] | None = None
+
+    def derivation_for(self, atom: GroundAtom) -> DatalogDerivation | None:
+        """Look up one derivation for a tuple, returning None if it is absent."""
+        if self.derivations is None:
+            raise ValueError("Datalog derivations were not captured")
+        return self.derivations.get(atom)
 
     def all_rule_fires(self) -> tuple[RuleFireTrace, ...]:
         matches: list[RuleFireTrace] = []

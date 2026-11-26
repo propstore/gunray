@@ -45,7 +45,7 @@ from .preference import (
     SuperiorityPreference,
     TrivialPreference,
 )
-from .program_file import evaluate_program_file
+from .program_file import evaluate_program_file, evaluate_program_file_with_trace
 from .schema import (
     ClosurePolicy,
     DefeasibleModel,
@@ -63,6 +63,7 @@ from .schema import (
     Scalar,
 )
 from .trace import (
+    DatalogDerivation,
     DatalogTrace,
     DefeasibleTrace,
     TraceConfig,
@@ -78,6 +79,7 @@ __all__ = [
     "ConditionalSentence",
     "ConsistencyReport",
     "Constant",
+    "DatalogDerivation",
     "DatalogTrace",
     "DefeasibleEvaluator",
     "DefeasibleModel",
@@ -123,6 +125,7 @@ __all__ = [
     "counter_argues",
     "disagrees",
     "evaluate_program_file",
+    "evaluate_program_file_with_trace",
     "explain",
     "inspect_grounding",
     "is_subargument",

@@ -41,6 +41,7 @@ from .types import (
     Rule,
     Scalar,
     SubtractExpression,
+    ValueTerm,
     Variable,
     Wildcard,
     variables_in_term,
@@ -506,20 +507,22 @@ def _iter_positive_body_matches_from_ordered_atoms(
     ordered_atoms: list[tuple[int, Atom]],
     model: RelationModel,
     overrides: RelationOverrides,
+    premises: dict[int, GroundAtom] | None = None,
 ) -> Iterator[Binding]:
-    compiled = compile_simple_matcher(ordered_atoms)
+    compiled = compile_simple_matcher(ordered_atoms) if premises is None else None
     if compiled is not None:
         yield from iter_compiled_bindings(compiled, model, overrides)
         return
-    yield from _iter_generic_positive_body_matches(ordered_atoms, model, overrides)
+    yield from _iter_generic_positive_body_matches(ordered_atoms, model, overrides, premises)
 
 
 def _iter_generic_positive_body_matches(
     ordered_atoms: list[tuple[int, Atom]],
     model: RelationModel,
     overrides: RelationOverrides,
+    premises: dict[int, GroundAtom] | None = None,
 ) -> Iterator[Binding]:
-    yield from _iter_matches_from(ordered_atoms, 0, {}, model, overrides)
+    yield from _iter_matches_from(ordered_atoms, 0, {}, model, overrides, premises)
 
 
 def _iter_matches_from(
@@ -528,6 +531,7 @@ def _iter_matches_from(
     binding: Binding,
     model: RelationModel,
     overrides: RelationOverrides,
+    premises: dict[int, GroundAtom] | None,
 ) -> Iterator[Binding]:
     if offset >= len(ordered_atoms):
         yield dict(binding)
@@ -539,7 +543,13 @@ def _iter_matches_from(
         changes = _bind_row(atom, row, binding)
         if changes is None:
             continue
-        yield from _iter_matches_from(ordered_atoms, offset + 1, binding, model, overrides)
+        if premises is not None:
+            # All slots are filled when a binding is yielded. Use the matched
+            # row itself so that anonymous wildcard columns are retained.
+            premises[index] = GroundAtom(atom.predicate, cast(FactTuple, row))
+        yield from _iter_matches_from(
+            ordered_atoms, offset + 1, binding, model, overrides, premises
+        )
         _rollback_binding(binding, changes)
 
 
@@ -633,6 +643,28 @@ def _negative_body_holds(
             if _unify(atom, row, binding) is not None:
                 return False
     return True
+
+
+def _instantiate_negative_atom(atom: Atom, binding: Binding) -> Atom:
+    return Atom(
+        atom.predicate,
+        tuple(
+            term if isinstance(term, Wildcard) else _instantiate_value_term(term, binding)
+            for term in atom.terms
+        ),
+    )
+
+
+def _instantiate_value_term(term: ValueTerm, binding: Binding) -> ValueTerm:
+    value = _value_from_term(term, binding)
+    if value is not None:
+        return Constant(cast(Scalar, value))
+    if isinstance(term, (AddExpression, SubtractExpression)):
+        return type(term)(
+            _instantiate_value_term(term.left, binding),
+            _instantiate_value_term(term.right, binding),
+        )
+    return term
 
 
 _UNBOUND = object()

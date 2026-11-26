@@ -11,7 +11,8 @@ import yaml
 from .errors import GunrayError
 from .evaluator import SemiNaiveEvaluator
 from .parser import parse_rule_text
-from .schema import Model, PredicateFacts, Program, Scalar
+from .schema import Model, NegationSemantics, PredicateFacts, Program, Scalar
+from .trace import DatalogTrace, TraceConfig
 
 
 class DocumentError(ValueError):
@@ -64,6 +65,19 @@ def evaluate_program_file(
     path: str | Path, *, facts: PredicateFacts | None = None, query: str | None = None
 ) -> Model:
     """Evaluate the file's program with optional additional rows for any relation."""
+    model, _ = evaluate_program_file_with_trace(path, facts=facts, query=query)
+    return model
+
+
+def evaluate_program_file_with_trace(
+    path: str | Path,
+    *,
+    facts: PredicateFacts | None = None,
+    query: str | None = None,
+    trace_config: TraceConfig | None = None,
+    negation_semantics: NegationSemantics = NegationSemantics.SAFE,
+) -> tuple[Model, DatalogTrace]:
+    """Evaluate a file and return its trace, including for relations outside the query."""
     path = Path(path)
     text = path.read_text(encoding="utf-8")
     try:
@@ -75,9 +89,13 @@ def evaluate_program_file(
         for predicate, additions in (facts or {}).items():
             rows.setdefault(predicate, []).extend(additions)
         rules = [_string(s, "rule") for s in _sequence(raw.get("rules", []), "rules")]
-        model = SemiNaiveEvaluator().evaluate(Program(facts=rows, rules=rules))
+        model, trace = SemiNaiveEvaluator().evaluate_with_trace(
+            Program(facts=rows, rules=rules),
+            trace_config=trace_config,
+            negation_semantics=negation_semantics,
+        )
         if query is None:
-            return model
+            return model, trace
         if query not in model.facts:
             # A declared relation with no derived rows may be absent from the model.
             parsed = (parse_rule_text(rule) for rule in rules)
@@ -87,7 +105,7 @@ def evaluate_program_file(
                 for atom in (*rule.heads, *rule.positive_body, *rule.negative_body)
             ):
                 raise DocumentError(f"Unknown relation {query!r}")
-        return Model(facts={query: model.facts.get(query, set())})
+        return Model(facts={query: model.facts.get(query, set())}), trace
     except GunrayError as exc:
         line = _rule_line(text, exc.rule_text) if exc.rule_text is not None else None
         location = f"{path}:{line}" if line is not None else str(path)
