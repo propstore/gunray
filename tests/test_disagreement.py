@@ -7,7 +7,7 @@ from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 from gunray import DefeasibleEvaluator, DefeasibleTheory, MarkingPolicy, Rule
-from gunray.disagreement import complement, disagrees, strict_closure
+from gunray.disagreement import complement, disagrees, has_contradiction, strict_closure
 from gunray.types import GroundAtom, GroundDefeasibleRule
 
 
@@ -21,6 +21,17 @@ def test_does_not_disagree_on_unrelated_literals() -> None:
     flies_tweety = GroundAtom(predicate="flies", arguments=("tweety",))
     bird_tweety = GroundAtom(predicate="bird", arguments=("tweety",))
     assert disagrees(flies_tweety, bird_tweety, ()) is False
+
+
+def test_explicit_conflicts_require_matching_arguments() -> None:
+    p_a = GroundAtom(predicate="p", arguments=("a",))
+    q_a = GroundAtom(predicate="q", arguments=("a",))
+    q_b = GroundAtom(predicate="q", arguments=("b",))
+    conflicts = frozenset({("q", "p")})
+
+    assert has_contradiction(frozenset({p_a, q_a}), conflicts=conflicts)
+    assert not has_contradiction(frozenset({p_a, q_b}), conflicts=conflicts)
+    assert not has_contradiction(frozenset({p_a, q_a}))
 
 
 def test_disagrees_via_strict_rule() -> None:

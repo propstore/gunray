@@ -22,7 +22,7 @@ from itertools import product
 
 from ._internal import _force_strict_for_closure, _ground_theory
 from .anytime import EnumerationExceeded
-from .disagreement import has_contradiction, strict_closure
+from .disagreement import StrictContext, has_contradiction, strict_closure
 from .errors import ContradictoryStrictTheoryError
 from .schema import DefeasibleTheory as SchemaDefeasibleTheory
 from .types import GroundAtom, GroundDefeasibleRule
@@ -80,17 +80,24 @@ def build_arguments(
     them as defeaters only.
     """
 
+    arguments, _ = _prepare_arguments(theory, max_arguments=max_arguments)
+    return arguments
+
+
+def _prepare_arguments(
+    theory: SchemaDefeasibleTheory,
+    *,
+    max_arguments: int | None = None,
+) -> tuple[frozenset[Argument], StrictContext]:
     grounded = _ground_theory(theory)
-    grounded_strict_rules = grounded.grounded_strict_rules
-    grounded_defeasible_rules = grounded.grounded_defeasible_rules
-    grounded_defeater_rules = grounded.grounded_defeater_rules
-    fact_atoms = grounded.fact_atoms
-    conflicts = grounded.conflicts
     if max_arguments is not None and max_arguments < 0:
         raise ValueError("max_arguments must be non-negative")
-
-    # Pi = strict facts, closed under ground strict rules.
-    pi_closure = strict_closure(fact_atoms, grounded_strict_rules)
+    context = StrictContext(grounded.grounded_strict_rules, grounded.fact_atoms, grounded.conflicts)
+    grounded_strict_rules = context.strict_rules
+    grounded_defeasible_rules = grounded.grounded_defeasible_rules
+    grounded_defeater_rules = grounded.grounded_defeater_rules
+    conflicts = context.conflicts
+    pi_closure = context.pi_closure
     if has_contradiction(pi_closure, conflicts=conflicts):
         raise ContradictoryStrictTheoryError("Pi is contradictory under strict rules and facts")
 
@@ -122,7 +129,7 @@ def build_arguments(
         # Non-contradiction guard (Def 3.1 cond 2 analogue): rejecting
         # ``{d}`` if ``Pi union {d}`` would be contradictory.
         combined = grounded_strict_rules + (_force_strict_for_closure(rule),)
-        closure = strict_closure(fact_atoms, combined)
+        closure = strict_closure(pi_closure, combined)
         if has_contradiction(closure, conflicts=conflicts):
             continue
         if _violates_default_negation(frozenset({rule}), closure, pi_closure):
@@ -164,16 +171,13 @@ def build_arguments(
                 if _has_redundant_nonempty_subset(
                     rule_set,
                     rule.head,
-                    fact_atoms,
-                    grounded_strict_rules,
-                    pi_closure,
-                    conflicts,
+                    context,
                 ):
                     continue
                 combined_rules = grounded_strict_rules + tuple(
                     _force_strict_for_closure(r) for r in rule_set
                 )
-                closure = strict_closure(fact_atoms, combined_rules)
+                closure = strict_closure(pi_closure, combined_rules)
                 if _violates_default_negation(rule_set, closure, pi_closure):
                     continue
                 if has_contradiction(closure, conflicts=conflicts):
@@ -188,7 +192,7 @@ def build_arguments(
                 ):
                     changed = True
 
-    return frozenset(arguments)
+    return frozenset(arguments), context
 
 
 def _add_minimal_argument(
@@ -219,23 +223,20 @@ def _add_minimal_argument(
 def _has_redundant_nonempty_subset(
     rule_set: frozenset[GroundDefeasibleRule],
     conclusion: GroundAtom,
-    fact_atoms: frozenset[GroundAtom],
-    grounded_strict_rules: tuple[GroundDefeasibleRule, ...],
-    pi_closure: frozenset[GroundAtom],
-    conflicts: frozenset[tuple[str, str]],
+    context: StrictContext,
 ) -> bool:
     for rule in rule_set:
         reduced = rule_set - {rule}
         if not reduced:
             continue
-        combined_rules = grounded_strict_rules + tuple(
+        combined_rules = context.strict_rules + tuple(
             _force_strict_for_closure(candidate) for candidate in reduced
         )
-        closure = strict_closure(fact_atoms, combined_rules)
+        closure = strict_closure(context.pi_closure, combined_rules)
         if (
             conclusion in closure
-            and not has_contradiction(closure, conflicts=conflicts)
-            and not _violates_default_negation(reduced, closure, pi_closure)
+            and not has_contradiction(closure, conflicts=context.conflicts)
+            and not _violates_default_negation(reduced, closure, context.pi_closure)
         ):
             return True
     return False

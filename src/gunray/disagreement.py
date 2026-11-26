@@ -11,17 +11,40 @@ pair of complementary literals. The trivial case is strong negation
 non-complementary literals and closing ``Pi union {h1, h2}`` under
 those strict rules yields a contradiction.
 
-The ground-atom strict closure implemented here is a recreation of
-the deleted ``_strict_body_closure`` helper from the old
-``defeasible.py``: propagate strict-rule heads into the closure until
-no more new atoms are derivable. Unlike the old helper this version
-is memoization-free; ``build_arguments`` (B1.3) calls it per subset
-and the test theories are small.
+Strict closure propagates rule heads until no more atoms are derivable.
+Each evaluation shares the closure of Pi and memoizes whether each
+pair of ground literals disagrees in that context.
 """
 
 from __future__ import annotations
 
-from .types import GroundAtom, GroundDefeasibleRule
+from dataclasses import InitVar, dataclass, field
+
+from .types import GroundAtom, GroundDefeasibleRule, Scalar
+
+
+@dataclass(frozen=True, slots=True)
+class StrictContext:
+    """Ground strict knowledge and disagreement results for one evaluation."""
+
+    strict_rules: tuple[GroundDefeasibleRule, ...]
+    facts: InitVar[frozenset[GroundAtom]]
+    conflicts: frozenset[tuple[str, str]]
+    pi_closure: frozenset[GroundAtom] = field(init=False)
+    _disagreements: dict[frozenset[GroundAtom], bool] = field(
+        init=False, default_factory=dict[frozenset[GroundAtom], bool], compare=False, repr=False
+    )
+
+    def __post_init__(self, facts: frozenset[GroundAtom]) -> None:
+        object.__setattr__(self, "pi_closure", strict_closure(facts, self.strict_rules))
+
+    def disagrees(self, left: GroundAtom, right: GroundAtom) -> bool:
+        pair = frozenset({left, right})
+        result = self._disagreements.get(pair)
+        if result is None:
+            result = disagrees(left, right, self.strict_rules, self.pi_closure, self.conflicts)
+            self._disagreements[pair] = result
+        return result
 
 
 def complement(atom: GroundAtom) -> GroundAtom:
@@ -45,10 +68,8 @@ def strict_closure(
 ) -> frozenset[GroundAtom]:
     """Forward-chain ``seeds`` plus strict ``facts`` under the ground strict rules.
 
-    Recreates the body of the deleted ``_strict_body_closure`` helper
-    (scout report Section 3.4) without memoization. Only rules with
-    ``kind == "strict"`` are propagated; other kinds are ignored so
-    callers can pass a heterogenous tuple.
+    Only rules with ``kind == "strict"`` are propagated. Callers may pass
+    a heterogeneous tuple.
     """
 
     closure: set[GroundAtom] = set(seeds) | set(facts)
@@ -99,10 +120,17 @@ def has_contradiction(
     for atom in closure:
         if complement(atom) in closure:
             return True
-    atoms = tuple(closure)
-    for left in atoms:
-        for right in atoms:
-            if _explicitly_conflict(left, right, conflicts):
+    if not conflicts:
+        return False
+
+    arguments_by_predicate: dict[str, set[tuple[Scalar, ...]]] = {}
+    for atom in closure:
+        arguments_by_predicate.setdefault(atom.predicate, set()).add(atom.arguments)
+    for left, right in conflicts:
+        left_arguments = arguments_by_predicate.get(left)
+        right_arguments = arguments_by_predicate.get(right)
+        if left_arguments is not None and right_arguments is not None:
+            if not left_arguments.isdisjoint(right_arguments):
                 return True
     return False
 

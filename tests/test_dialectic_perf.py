@@ -1,8 +1,11 @@
 import time
+from collections import Counter
+from hashlib import sha256
 
 import pytest
 
 import gunray.dialectic as dialectic
+import gunray.disagreement as disagreement
 from gunray import DefeasibleEvaluator, DefeasibleTheory, MarkingPolicy, Rule
 from gunray.arguments import build_arguments
 from gunray.dialectic import (
@@ -14,7 +17,7 @@ from gunray.dialectic import (
     render_tree,
 )
 from gunray.preference import TrivialPreference
-from gunray.types import GroundAtom
+from gunray.types import GroundAtom, GroundDefeasibleRule
 
 
 def _linear_chain_theory(n: int) -> DefeasibleTheory:
@@ -43,6 +46,37 @@ def test_linear_chain_evaluate_completes_under_30s() -> None:
     DefeasibleEvaluator().evaluate(theory, marking_policy=MarkingPolicy.BLOCKING)
     elapsed = time.perf_counter() - start
     assert elapsed < 30.0, f"long-chain evaluate took {elapsed:.1f}s"
+
+
+@pytest.mark.parametrize("k", (6, 8, 10))
+def test_blocking_disagreement_benchmark(k: int) -> None:
+    """Time the blocking evaluator with k independent arguments for each side."""
+    premises = [
+        (f"{prefix}_{i}", head) for prefix, head in (("p", "q"), ("n", "~q")) for i in range(k)
+    ]
+    theory = DefeasibleTheory(
+        facts={predicate: {("a",)} for predicate, _ in premises},
+        defeasible_rules=[
+            Rule(id=predicate, head=f"{head}(X)", body=[f"{predicate}(X)"])
+            for predicate, head in premises
+        ],
+    )
+
+    start = time.perf_counter()
+    model = DefeasibleEvaluator().evaluate(theory, marking_policy=MarkingPolicy.BLOCKING)
+    elapsed = time.perf_counter() - start
+    sections = sorted(
+        (section, sorted((name, sorted(rows)) for name, rows in predicates.items()))
+        for section, predicates in model.sections.items()
+    )
+    fingerprint = sha256(repr(sections).encode()).hexdigest()[:16]
+    print(f"k={k:2d} {elapsed:.6f}s sections={fingerprint}")
+    assert model.sections == {
+        "yes": theory.facts,
+        "no": {f"~{predicate}": {("a",)} for predicate, _ in premises},
+        "undecided": {"q": {("a",)}, "~q": {("a",)}},
+        "unknown": {},
+    }
 
 
 def _ga(predicate: str, *args: str) -> GroundAtom:
@@ -76,6 +110,35 @@ def _find_argument(theory: DefeasibleTheory, conclusion: GroundAtom, rule_id: st
         if argument.conclusion == conclusion and has_rule:
             return argument
     raise LookupError((conclusion, rule_id))
+
+
+def test_evaluate_checks_each_disagreement_pair_once_per_evaluation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    theory = _branching_attack_theory()
+    evaluator = DefeasibleEvaluator()
+    calls: Counter[frozenset[GroundAtom]] = Counter()
+    original = disagreement.disagrees
+
+    def counted(
+        left: GroundAtom,
+        right: GroundAtom,
+        rules: tuple[GroundDefeasibleRule, ...],
+        facts: frozenset[GroundAtom],
+        conflicts: frozenset[tuple[str, str]],
+    ) -> bool:
+        calls[frozenset({left, right})] += 1
+        return original(left, right, rules, facts, conflicts)
+
+    monkeypatch.setattr(disagreement, "disagrees", counted)
+    first = evaluator.evaluate(theory, marking_policy=MarkingPolicy.BLOCKING)
+    assert calls[frozenset({_ga("p", "x"), _ga("~p", "x")})] == 1
+    assert set(calls.values()) == {1}
+    first_calls = calls.copy()
+
+    second = evaluator.evaluate(theory, marking_policy=MarkingPolicy.BLOCKING)
+    assert second.sections == first.sections
+    assert calls == first_calls + first_calls
 
 
 def test_build_tree_grounds_strict_context_once(monkeypatch: pytest.MonkeyPatch) -> None:
