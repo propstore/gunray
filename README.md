@@ -106,6 +106,32 @@ In YAML fact rows, `leaf` is a string. In rule terms, `leaf` and `X` are
 both variables. Write `"leaf"` for the literal string. Rule parsing and
 safety errors identify the file and the starting line of the rule.
 
+To inspect how a Datalog result was derived, capture derivations explicitly:
+
+```python
+from gunray import GroundAtom, TraceConfig, evaluate_program_file_with_trace
+
+_, trace = evaluate_program_file_with_trace(
+    "ancestry.gnr", query="answer", trace_config=TraceConfig(capture_derivations=True)
+)
+step = trace.derivation_for(GroundAtom("answer", ("root",)))
+assert step is not None
+print(step.rule_text)  # answer(X) :- above("leaf",X).
+print(step.premises)   # (GroundAtom(predicate='above', arguments=('leaf', 'root')),)
+```
+
+Call `derivation_for` on any premise to follow the derivation back to
+supplied facts. Each step records one successful rule application, with
+the matched premises in rule order and the instantiated comparisons and
+negated patterns that held. For a supplied fact, the step's `rule_text`
+is `None`. An absent tuple returns `None`; asking a trace that has no
+derivations raises `ValueError`. The same trace option works with
+`GunrayEvaluator.evaluate_with_trace`. It records the first successful
+application, which can depend on evaluation order.
+
+See Zhao, Subotić, and Scholz, [*Debugging Large-scale Datalog*, Def. 2.1
+and §3.3, pp. 7:7 and 7:16–17](https://doi.org/10.1145/3379446).
+
 The `answer`, `model`, `explain` and `tree` commands accept the existing
 `DefeasibleTheory` schema in YAML or JSON.
 

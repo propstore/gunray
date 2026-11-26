@@ -13,6 +13,7 @@ from typing import cast
 
 from ._internal import (
     _constraints_hold,
+    _instantiate_negative_atom,
     _iter_positive_body_matches_from_ordered_atoms,
     _negative_body_holds,
     _normalize_rules,
@@ -24,13 +25,20 @@ from .compiled import (
     compile_simple_rule,
     iter_compiled_head_rows,
 )
-from .parser import ground_atom, parse_program
+from .parser import evaluate_term, ground_atom, parse_program
 from .relation import IndexedRelation
 from .schema import FactTuple, Model, NegationSemantics
 from .schema import Program as SchemaProgram
 from .stratify import stratify
-from .trace import DatalogTrace, IterationTrace, RuleFireTrace, StratumTrace, TraceConfig
-from .types import Rule
+from .trace import (
+    DatalogDerivation,
+    DatalogTrace,
+    IterationTrace,
+    RuleFireTrace,
+    StratumTrace,
+    TraceConfig,
+)
+from .types import Comparison, Constant, GroundAtom, Rule
 
 _CompiledRuleCacheKey = tuple[Rule, tuple[int, ...]]
 
@@ -62,7 +70,13 @@ class SemiNaiveEvaluator:
         _validate_program(facts, rules, negation_semantics)
         strata = stratify(rules)
         actual_trace_config = trace_config or TraceConfig()
-        trace = DatalogTrace(config=actual_trace_config)
+        derivations = None
+        if actual_trace_config.capture_derivations:
+            derivations = dict.fromkeys(
+                (GroundAtom(predicate, row) for predicate, rows in facts.items() for row in rows),
+                DatalogDerivation(rule_text=None),
+            )
+        trace = DatalogTrace(config=actual_trace_config, derivations=derivations)
 
         model = {predicate: IndexedRelation(rows) for predicate, rows in facts.items()}
         for predicates in strata:
@@ -88,6 +102,7 @@ def _evaluate_stratum(
     stratum_trace = StratumTrace(predicates=tuple(sorted(stratum_predicates)))
     if trace is not None:
         trace.strata.append(stratum_trace)
+    derivations = trace.derivations if trace is not None else None
 
     delta = {
         predicate: IndexedRelation(model.get(predicate, IndexedRelation()).as_set())
@@ -132,6 +147,7 @@ def _evaluate_stratum(
                     iteration_trace=iteration_trace,
                     trace_config=actual_trace_config,
                     compiled_rule_cache=compiled_rule_cache,
+                    derivations=derivations,
                 )
             if recursive_positions or not first_iteration:
                 continue
@@ -144,6 +160,7 @@ def _evaluate_stratum(
                 iteration_trace=iteration_trace,
                 trace_config=actual_trace_config,
                 compiled_rule_cache=compiled_rule_cache,
+                derivations=derivations,
             )
         if not any(delta_relation for delta_relation in next_delta.values()):
             return
@@ -161,6 +178,9 @@ def _apply_rule(
     delta: dict[str, IndexedRelation],
     bindings: Iterable[dict[str, object]],
     trace_config: TraceConfig | None = None,
+    *,
+    derivations: dict[GroundAtom, DatalogDerivation] | None = None,
+    premises: dict[int, GroundAtom] | None = None,
 ) -> tuple[int, tuple[tuple[object, ...], ...]]:
     actual_trace_config = trace_config or TraceConfig()
     derived_count = 0
@@ -177,6 +197,25 @@ def _apply_rule(
         if delta_bucket.add(derived.arguments):
             derived_count += 1
             _capture_derived_row(captured_rows, derived.arguments, actual_trace_config)
+            if derivations is not None and premises is not None:
+                # Record one proof step at first insertion. Its premises are
+                # in the current model, before this delta becomes visible.
+                # Zhao et al. (2020), Def. 2.1, p. 7:7 and §3.3, pp. 7:16–17.
+                derivations[derived] = DatalogDerivation(
+                    rule_text=rule.source_text,
+                    premises=tuple(premises[index] for index in range(len(rule.positive_body))),
+                    negated=tuple(
+                        _instantiate_negative_atom(atom, binding) for atom in rule.negative_body
+                    ),
+                    constraints=tuple(
+                        Comparison(
+                            Constant(evaluate_term(condition.left, binding)),
+                            condition.operator,
+                            Constant(evaluate_term(condition.right, binding)),
+                        )
+                        for condition in rule.constraints
+                    ),
+                )
     return derived_count, tuple(captured_rows)
 
 
@@ -189,6 +228,8 @@ def apply_rule_with_overrides(
     iteration_trace: IterationTrace | None,
     trace_config: TraceConfig | None = None,
     compiled_rule_cache: dict[_CompiledRuleCacheKey, CompiledSimpleRule | None] | None = None,
+    *,
+    derivations: dict[GroundAtom, DatalogDerivation] | None = None,
 ) -> int:
     actual_trace_config = trace_config or TraceConfig()
     ordered_atoms = _order_positive_body(
@@ -197,7 +238,7 @@ def apply_rule_with_overrides(
         overrides,
         preferred_first_index=preferred_first_index,
     )
-    if not rule.negative_body and not rule.constraints:
+    if derivations is None and not rule.negative_body and not rule.constraints:
         cache_key = (rule, tuple(source_index for source_index, _atom in ordered_atoms))
         if compiled_rule_cache is None:
             compiled_rule = compile_simple_rule(rule.heads[0], ordered_atoms)
@@ -223,10 +264,12 @@ def apply_rule_with_overrides(
                 captured_rows,
             )
             return derived_count
+    premises: dict[int, GroundAtom] | None = {} if derivations is not None else None
     bindings = _iter_positive_body_matches_from_ordered_atoms(
         ordered_atoms,
         model,
         overrides,
+        premises,
     )
     derived_count, captured_rows = _apply_rule(
         rule,
@@ -234,6 +277,8 @@ def apply_rule_with_overrides(
         delta,
         bindings,
         actual_trace_config,
+        derivations=derivations,
+        premises=premises,
     )
     _record_rule_fire(
         iteration_trace,
